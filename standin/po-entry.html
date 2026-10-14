@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<title>CASES21 stand-in - Purchase Order Entry</title>
+<!--
+  Stand-in for the CASES21 Finance purchase order entry screen, for testing the
+  Power Automate bridge without touching real CASES21 data. All codes and names
+  are fake. Field list is a draft: correct it to match the real screen.
+  Keyboard: Tab between fields, Ctrl+S save (a new blank order opens after each save).
+-->
+<style>
+  body { margin: 0; background: #d4d0c8; font: 13px "Segoe UI", Tahoma, sans-serif; color: #000; }
+  .title { background: linear-gradient(90deg, #0a246a, #a6caf0); color: #fff; font-weight: bold; padding: 4px 8px; }
+  main { padding: 10px; }
+  fieldset { border: 1px solid #808080; margin: 0 0 10px; padding: 8px; }
+  legend { padding: 0 4px; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .row label { width: 110px; }
+  input { font: inherit; border: 2px inset #fff; padding: 2px 4px; background: #fff; }
+  input[readonly] { background: #ece9d8; }
+  table { border-collapse: collapse; }
+  th, td { border: 1px solid #808080; padding: 2px 4px; text-align: left; }
+  th { background: #ece9d8; font-weight: normal; }
+  td input { width: 100%; box-sizing: border-box; border-width: 1px; }
+  .num { text-align: right; }
+  button { font: inherit; padding: 3px 14px; }
+  #status { border: 2px inset #fff; padding: 3px 6px; margin-top: 10px; min-height: 18px; background: #ece9d8; }
+  #status.error { color: #b00000; font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="title">CASES21 stand-in - Purchase Order Entry</div>
+<main>
+  <fieldset>
+    <legend>Order header</legend>
+    <div class="row"><label for="po">Order no.</label><input id="po" readonly tabindex="-1" size="8"></div>
+    <div class="row"><label for="creditor">Creditor code</label><input id="creditor" size="8" maxlength="8"><input id="creditorName" readonly tabindex="-1" size="34"></div>
+    <div class="row"><label for="date">Order date</label><input id="date" size="10" placeholder="dd/mm/yyyy"></div>
+    <div class="row"><label for="ref">Reference</label><input id="ref" size="44" maxlength="60"></div>
+    <div class="row"><label for="orderedBy">Ordered by</label><input id="orderedBy" size="6" maxlength="6"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Order lines</legend>
+    <table>
+      <thead><tr><th>#</th><th>GL code</th><th>Subprogram</th><th>Initiative</th><th>Description</th><th>Qty</th><th>Unit price (ex GST)</th><th>GST code</th><th>Line total</th></tr></thead>
+      <tbody id="lines"></tbody>
+    </table>
+    <div class="row" style="justify-content:flex-end">
+      Sub-total <input id="subtotal" class="num" readonly tabindex="-1" size="10">
+      GST <input id="gst" class="num" readonly tabindex="-1" size="10">
+      Total <input id="total" class="num" readonly tabindex="-1" size="10">
+    </div>
+  </fieldset>
+
+  <button id="save">Save (Ctrl+S)</button> <button id="new">New order</button>
+  <div id="status">Ready</div>
+
+  <fieldset style="margin-top:10px">
+    <legend>Saved purchase orders</legend>
+    <table><thead><tr><th>Order no.</th><th>Date</th><th>Creditor</th><th>Reference</th><th class="num">Total</th></tr></thead><tbody id="saved"></tbody></table>
+  </fieldset>
+</main>
+<script>
+const CREDITORS = { ACME01: "ACME Stationery (fake)", BAYHW1: "Bayside Hardware (fake)", NSSPRT: "Northside Sports Supplies (fake)" };
+const GL_CODES = ["86101", "86102", "86501", "86901"];
+const GST_RATES = { GST: 0.1, FRE: 0 };
+const LINE_COUNT = 5;
+const $ = id => document.getElementById(id);
+
+const tbody = $("lines");
+for (let i = 1; i <= LINE_COUNT; i++) {
+  tbody.insertAdjacentHTML("beforeend", `<tr><td>${i}</td>
+    <td><input name="gl" size="6" maxlength="5"></td><td><input name="sub" size="5" maxlength="4"></td>
+    <td><input name="init" size="4" maxlength="3"></td><td><input name="desc" size="28" maxlength="40"></td>
+    <td><input name="qty" class="num" size="4"></td><td><input name="price" class="num" size="9"></td>
+    <td><input name="tax" size="4" maxlength="3"></td><td><input name="total" class="num" readonly tabindex="-1" size="9"></td></tr>`);
+}
+
+function loadSaved() { try { return JSON.parse(localStorage.getItem("po-standin") || "[]"); } catch { return []; } }
+function storeSaved(list) { try { localStorage.setItem("po-standin", JSON.stringify(list)); } catch {} }
+function money(n) { return n.toFixed(2); }
+function status(msg, isError) { $("status").textContent = msg; $("status").className = isError ? "error" : ""; }
+
+function lineRows() {
+  return [...tbody.rows].map(r => Object.fromEntries([...r.querySelectorAll("input")].map(i => [i.name, i])));
+}
+
+function recalc() {
+  let sub = 0, gst = 0;
+  for (const l of lineRows()) {
+    const qty = parseFloat(l.qty.value), price = parseFloat(l.price.value);
+    if (isNaN(qty) || isNaN(price)) { l.total.value = ""; continue; }
+    const ex = qty * price;
+    l.total.value = money(ex);
+    sub += ex;
+    gst += ex * (GST_RATES[l.tax.value.toUpperCase()] ?? 0);
+  }
+  $("subtotal").value = money(sub); $("gst").value = money(gst); $("total").value = money(sub + gst);
+}
+
+function fail(msg, el) { status(msg, true); el.focus(); el.select(); return false; }
+
+function validate() {
+  const code = $("creditor").value.toUpperCase();
+  if (!CREDITORS[code]) return fail(`Creditor code "${code}" not found`, $("creditor"));
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test($("date").value)) return fail("Order date must be dd/mm/yyyy", $("date"));
+  if (!$("ref").value.trim()) return fail("Reference is required", $("ref"));
+  let used = 0;
+  for (const [n, l] of lineRows().entries()) {
+    if (!l.gl.value && !l.desc.value && !l.qty.value) continue;
+    used++;
+    if (!GL_CODES.includes(l.gl.value)) return fail(`Line ${n + 1}: GL code "${l.gl.value}" not found`, l.gl);
+    if (!/^\d{4}$/.test(l.sub.value)) return fail(`Line ${n + 1}: subprogram must be 4 digits`, l.sub);
+    if (!/^\d{3}$/.test(l.init.value)) return fail(`Line ${n + 1}: initiative must be 3 digits`, l.init);
+    if (!(parseFloat(l.qty.value) > 0)) return fail(`Line ${n + 1}: quantity must be more than 0`, l.qty);
+    if (!(parseFloat(l.price.value) >= 0)) return fail(`Line ${n + 1}: unit price is invalid`, l.price);
+    if (!(l.tax.value.toUpperCase() in GST_RATES)) return fail(`Line ${n + 1}: GST code must be GST or FRE`, l.tax);
+  }
+  if (!used) return fail("Enter at least one order line", lineRows()[0].gl);
+  return true;
+}
+
+function renderSaved() {
+  $("saved").innerHTML = loadSaved().map(p =>
+    `<tr><td>${p.po}</td><td>${p.date}</td><td>${p.creditor}</td><td>${p.ref.replace(/</g, "&lt;")}</td><td class="num">${p.total}</td></tr>`).join("");
+}
+
+function newOrder() {
+  document.querySelectorAll("main input:not([readonly])").forEach(i => i.value = "");
+  $("creditorName").value = "";
+  const d = new Date();
+  $("date").value = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+  $("po").value = String(loadSaved().length + 1).padStart(6, "0");
+  recalc(); status("Ready"); $("creditor").focus();
+}
+
+function save() {
+  recalc();
+  if (!validate()) return;
+  const list = loadSaved();
+  list.push({ po: $("po").value, date: $("date").value, creditor: $("creditor").value.toUpperCase(), ref: $("ref").value, total: $("total").value });
+  storeSaved(list); renderSaved();
+  const po = $("po").value;
+  newOrder();
+  status(`Purchase order ${po} saved`);
+}
+
+$("creditor").addEventListener("change", e => { $("creditorName").value = CREDITORS[e.target.value.toUpperCase()] || "** not found **"; });
+tbody.addEventListener("input", recalc);
+$("save").onclick = save;
+$("new").onclick = newOrder;
+document.addEventListener("keydown", e => {
+  if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); save(); }
+});
+renderSaved(); newOrder();
+</script>
+</body>
+</html>
