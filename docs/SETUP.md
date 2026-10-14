@@ -12,7 +12,61 @@ Do the steps in order. Each ends with what to send back.
 
 ## 2. Desktop flow `cases21-hands`
 
-DESKTOP_FLOW_SECTION
+This flow is the only part that touches the PC. It does nothing unless a window titled
+`CASES21 stand-in...` exists, re-focuses that window before every step, and screenshots only that window.
+
+1. Open **Power Automate for desktop** > **+ New flow**. Name: `cases21-hands`.
+   If the dialog shows a **Power Fx enabled** option, turn it **off** (the code below won't paste otherwise).
+   Click **Create**.
+2. In the **Variables** panel (right) > **Input / output variables** > **+**:
+   - **Input**: name `StepsJson`, type Text, default value `{"steps": [{"type": "keys", "value": "ACME01{Tab}"}]}`,
+     external name `StepsJson` > **Save**.
+   - **Output**: name `ScreenshotB64`, type Text, external name `ScreenshotB64` > **Save**.
+   - **Output**: name `ErrorText`, type Text, external name `ErrorText` > **Save**.
+3. Copy all the code below, click in the empty middle area of the designer, press **Ctrl+V**.
+   If nothing appears, PAD rejected a line: send Claude a screenshot.
+   ```
+   SET ErrorText TO $''''''
+   SET ScreenshotB64 TO $''''''
+   SET Done TO False
+   BLOCK 
+   ON BLOCK ERROR all
+   END
+       Variables.ConvertJsonToCustomObject Json: StepsJson CustomObject=> Job
+       LOOP FOREACH Step IN Job['steps']
+           UIAutomation.FocusWindow.FocusByTitleClass Title: $'''CASES21 stand-in*''' Class: $''''''
+           IF Step['type'] = $'''keys''' THEN
+               SET Keys TO Step['value']
+               MouseAndKeyboard.SendKeys.FocusAndSendKeys TextToSend: Keys DelayBetweenKeystrokes: 20 SendTextAsHardwareKeys: False
+           ELSE IF Step['type'] = $'''click''' THEN
+               SET ClickX TO Step['x']
+               SET ClickY TO Step['y']
+               MouseAndKeyboard.SendMouseClick.ClickAt ClickType: MouseAndKeyboard.MouseClickType.LeftClick MillisecondsDelay: 0 X: ClickX Y: ClickY RelativeTo: MouseAndKeyboard.PositionRelativeTo.ActiveWindow MovementStyle: MouseAndKeyboard.MovementStyle.Instant
+           ELSE IF Step['type'] = $'''wait''' THEN
+               SET Seconds TO Step['value']
+               WAIT Seconds
+           END
+       END
+       SET Done TO True
+   END
+   IF Done = False THEN
+       ERROR => LastError
+       SET ErrorText TO LastError.Message
+   END
+   BLOCK 
+   ON BLOCK ERROR all
+   END
+       WAIT 1
+       UIAutomation.FocusWindow.FocusByTitleClass Title: $'''CASES21 stand-in*''' Class: $''''''
+       System.GetEnvironmentVariable.GetEnvironmentVariable Name: $'''TEMP''' Value=> TempDir
+       SET ShotPath TO $'''%TempDir%\\cases21-shot.jpg'''
+       Workstation.TakeScreenshot.TakeScreenshotOfForegroundWindowAndSaveToFile File: ShotPath ImageFormat: System.ImageFormat.Jpg
+       File.ConvertToBase64 File: ShotPath Base64Text=> ScreenshotB64
+   END
+   ```
+4. **Ctrl+S**. With the stand-in window open, click **Run** (▶). Expected: the stand-in's Creditor code
+   shows `ACME01`, the cursor moves to Order date, and in the Variables panel `ScreenshotB64` is a long
+   text and `ErrorText` is empty. Send Claude a screenshot of the Variables panel.
 
 ## 3. Cloud flow `cases21-bridge`
 
@@ -32,9 +86,10 @@ Reuse the test flow.
 4. Click the **Response** box.
    - **Status Code**: `200`
    - **Body**: type `{"error": "", "screenshot": ""}`. Put the cursor between the first pair of empty quotes,
-     click the lightning icon, choose **Error** (under "Run a flow built with Power Automate for desktop").
+     click the lightning icon, choose **ErrorText** (under "Run a flow built with Power Automate for desktop").
      Put the cursor between the second pair, choose **ScreenshotB64** the same way.
-   - **Settings** tab: turn **Asynchronous response** On.
+   - Leave **Asynchronous response** (Settings tab) off. The agent then gets the answer in the same call,
+     which must finish within 2 minutes.
 5. Rename the flow (top left) to `cases21-bridge` and **Save**.
 
 ## 4. App registration (identity the agent signs in as)

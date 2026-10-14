@@ -10,12 +10,15 @@ Phase A targets a stand-in purchase order screen with fake data. CASES21 itself
 agent (cloud)                Power Automate (DE tenant)               school PC (AS-PC12EDTF)
 -------------                --------------------------               -----------------------
 bridge/pa.py  --HTTPS+token-->  cloud flow "cases21-bridge"   --->   desktop flow "cases21-hands"
-              <--202, poll----   (HTTP trigger, async reply)  <---    focus window, send keys /
+              <---------------   (HTTP trigger)               <---    focus window, send keys /
               <--screenshot---                                        clicks, screenshot (JPG)
 ```
 
 1. `pa.py` gets an Entra token for the `cases21-bridge-agent` app and POSTs a list of steps.
-2. The cloud flow replies 202 at once, runs the desktop flow (attended) and returns its result to the poll.
+2. The cloud flow runs the desktop flow (attended) and returns its result in the same HTTP call, which must
+   finish within 120 s. For longer runs, the Response action's asynchronous mode returns 202 + Location and
+   `pa.py` polls it, but a 2025 community report says the Location URL fails with the new trigger URLs, so
+   test that before relying on it.
 3. The desktop flow only touches a window whose title starts with `CASES21 stand-in`; it sends keystrokes
    and clicks, then returns a screenshot. The agent reads the screenshot and decides the next steps.
 
@@ -29,7 +32,7 @@ Step types: `{"type": "keys", "value": "ACME01{Tab}"}`, `{"type": "click", "x": 
 | Power Automate with school account | Works |
 | HTTP trigger (Premium) | Works, on a 90-day Premium trial |
 | PC registered for cloud-triggered desktop flows | Works (Windows 11 Education, admin rights) |
-| Cloud flow runs a desktop flow | Not tested yet (`bridge-hello`) |
+| Desktop flow `cases21-hands` pastes and runs | Not tested yet |
 | Entra app registration for the agent | Not checked yet |
 | End-to-end from the agent | Not tested yet |
 

@@ -4,8 +4,9 @@ Usage:
   python bridge/pa.py '{"steps": [{"type": "keys", "value": "ACME01{Tab}"}]}'
   python bridge/pa.py - < steps.json
 
-Step types: keys (value: PAD send-keys text), click (x, y relative to the
-window), wait (seconds). A screenshot is always taken after the last step.
+Step types: keys (value: PAD send-keys text, e.g. "ACME01{Tab}"; Ctrl+S is
+"{Control}({S})"), click (x, y relative to the window), wait (seconds).
+A screenshot of the stand-in window is taken after the last step.
 
 Needs env vars PA_TENANT_ID, PA_CLIENT_ID, PA_CLIENT_SECRET, PA_FLOW_URL.
 """
