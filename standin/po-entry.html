@@ -2,12 +2,17 @@
 <html lang="en-AU">
 <head>
 <meta charset="utf-8">
-<title>CASES21 stand-in - Purchase Order Entry</title>
+<title>CASES21 stand-in - CR31031 Creditor Order</title>
 <!--
-  Stand-in for the CASES21 Finance purchase order entry screen, for testing the
-  Power Automate bridge without touching real CASES21 data. All codes and names
-  are fake. Field list is a draft: correct it to match the real screen.
-  Keyboard: Tab between fields, Ctrl+S save (a new blank order opens after each save).
+  Stand-in for CASES21 Finance screen CR31031 Creditor Order (ADD mode), for testing the
+  Power Automate bridge without real CASES21 data. Creditor keys are fake.
+  Field and Tab order follow the community "CASES21 Purchase Order Import Builder" PAD flow:
+    header: Creditor key, Order number, Ordered by, Order date, Delivery code, Delivery instructions
+    line:   Table, Subprogram, Initiative, Code, Delivery, Tax code, Quantity, Unit cost (ex GST),
+            Nett, GST, Amount (calculated), Detail; Tab from Detail goes to the next line's Table.
+  From Unit cost, three Tabs reach Detail (as in that flow), so GST and Amount are Tab stops here.
+  Keys: Alt+N saves the order to the batch and starts a new one (CASES21 uses Ctrl+Shift+N, which
+  Edge reserves). "Update batch" commits the batch; it has no shortcut, so a person must click it.
 -->
 <style>
   body { margin: 0; background: #d4d0c8; font: 13px "Segoe UI", Tahoma, sans-serif; color: #000; }
@@ -16,7 +21,7 @@
   fieldset { border: 1px solid #808080; margin: 0 0 10px; padding: 8px; }
   legend { padding: 0 4px; }
   .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
-  .row label { width: 110px; }
+  .row label { width: 130px; }
   input { font: inherit; border: 2px inset #fff; padding: 2px 4px; background: #fff; }
   input[readonly] { background: #ece9d8; }
   table { border-collapse: collapse; }
@@ -26,135 +31,150 @@
   .num { text-align: right; }
   button { font: inherit; padding: 3px 14px; }
   #status { border: 2px inset #fff; padding: 3px 6px; margin-top: 10px; min-height: 18px; background: #ece9d8; }
-  #status.error { color: #b00000; font-weight: bold; }
+  #dialog { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.15); }
+  #dialog div { background: #d4d0c8; border: 2px outset #fff; min-width: 320px; }
+  #dialog p { margin: 16px; }
+  #dialog button { margin: 0 16px 12px; }
 </style>
 </head>
 <body>
-<div class="title">CASES21 stand-in - Purchase Order Entry</div>
+<div class="title">CASES21 stand-in - CR31031 Creditor Order - ADD mode</div>
 <main>
   <fieldset>
-    <legend>Order header</legend>
-    <div class="row"><label for="po">Order no.</label><input id="po" readonly tabindex="-1" size="8"></div>
-    <div class="row"><label for="creditor">Creditor code</label><input id="creditor" size="8" maxlength="8"><input id="creditorName" readonly tabindex="-1" size="34"></div>
-    <div class="row"><label for="date">Order date</label><input id="date" size="10" placeholder="dd/mm/yyyy"></div>
-    <div class="row"><label for="ref">Reference</label><input id="ref" size="44" maxlength="60"></div>
-    <div class="row"><label for="orderedBy">Ordered by</label><input id="orderedBy" size="6" maxlength="6"></div>
+    <legend>Order</legend>
+    <div class="row"><label for="crkey">Creditor key</label><input id="crkey" size="10" maxlength="10"><input id="crname" readonly tabindex="-1" size="34"></div>
+    <div class="row"><label for="orderNo">Order number</label><input id="orderNo" size="12" maxlength="12"></div>
+    <div class="row"><label for="orderedBy">Ordered by</label><input id="orderedBy" size="8" maxlength="8"></div>
+    <div class="row"><label for="orderDate">Order date</label><input id="orderDate" size="10" placeholder="dd/mm/yyyy"></div>
+    <div class="row"><label for="delCode">Delivery code</label><input id="delCode" size="8" maxlength="8"></div>
+    <div class="row"><label for="delInstr">Delivery instructions</label><input id="delInstr" size="50" maxlength="60"></div>
   </fieldset>
 
   <fieldset>
-    <legend>Order lines</legend>
+    <legend>Lines</legend>
     <table>
-      <thead><tr><th>#</th><th>GL code</th><th>Subprogram</th><th>Initiative</th><th>Description</th><th>Qty</th><th>Unit price (ex GST)</th><th>GST code</th><th>Line total</th></tr></thead>
+      <thead><tr><th>#</th><th>Table</th><th>Subprogram</th><th>Initiative</th><th>Code</th><th>Delivery</th><th>Tax code</th><th>Quantity</th><th>Unit cost</th><th>Nett</th><th>GST</th><th>Amount</th><th>Detail</th></tr></thead>
       <tbody id="lines"></tbody>
     </table>
-    <div class="row" style="justify-content:flex-end">
-      Sub-total <input id="subtotal" class="num" readonly tabindex="-1" size="10">
-      GST <input id="gst" class="num" readonly tabindex="-1" size="10">
-      Total <input id="total" class="num" readonly tabindex="-1" size="10">
-    </div>
+    <div class="row" style="justify-content:flex-end">Order total <input id="total" class="num" readonly tabindex="-1" size="10"></div>
   </fieldset>
 
-  <button id="save">Save (Ctrl+S)</button> <button id="new">New order</button>
-  <div id="status">Ready</div>
+  <button id="newOrder">New order (Alt+N)</button> <button id="update">Update batch</button>
+  <div id="status">ADD mode - enter creditor key</div>
 
   <fieldset style="margin-top:10px">
-    <legend>Saved purchase orders</legend>
-    <table><thead><tr><th>Order no.</th><th>Date</th><th>Creditor</th><th>Reference</th><th class="num">Total</th></tr></thead><tbody id="saved"></tbody></table>
+    <legend>Batch</legend>
+    <table><thead><tr><th>Order number</th><th>Creditor key</th><th>Order date</th><th>Lines</th><th class="num">Total</th><th>Status</th></tr></thead><tbody id="batch"></tbody></table>
   </fieldset>
 </main>
+<div id="dialog"><div><p id="dialogMsg"></p><button id="dialogOk">OK</button></div></div>
 <script>
 const CREDITORS = { ACME01: "ACME Stationery (fake)", BAYHW1: "Bayside Hardware (fake)", NSSPRT: "Northside Sports Supplies (fake)" };
-const GL_CODES = ["86101", "86102", "86501", "86901"];
-const GST_RATES = { GST: 0.1, FRE: 0 };
+const SUBPROGRAMS = ["0000", "6001", "6201", "6401", "7001", "9499"];
+const GL_CODES = ["86101", "86104", "86402", "86504", "86920", "89302"];
+const TAX_RATES = { G11: 0.1, G13: 0, G14: 0, NP6: 0 }; // G11 = 10% GST, G14 = GST-free; G13/NP6 rates not known
 const LINE_COUNT = 5;
 const $ = id => document.getElementById(id);
 
 const tbody = $("lines");
 for (let i = 1; i <= LINE_COUNT; i++) {
   tbody.insertAdjacentHTML("beforeend", `<tr><td>${i}</td>
-    <td><input name="gl" size="6" maxlength="5"></td><td><input name="sub" size="5" maxlength="4"></td>
-    <td><input name="init" size="4" maxlength="3"></td><td><input name="desc" size="28" maxlength="40"></td>
-    <td><input name="qty" class="num" size="4"></td><td><input name="price" class="num" size="9"></td>
-    <td><input name="tax" size="4" maxlength="3"></td><td><input name="total" class="num" readonly tabindex="-1" size="9"></td></tr>`);
+    <td><input name="table" size="3" maxlength="2"></td><td><input name="sub" size="5" maxlength="4"></td>
+    <td><input name="init" size="4" maxlength="3"></td><td><input name="code" size="8" maxlength="10"></td>
+    <td><input name="delivery" size="6" maxlength="8"></td><td><input name="tax" size="4" maxlength="3"></td>
+    <td><input name="qty" class="num" size="5"></td><td><input name="cost" class="num" size="8"></td>
+    <td><input name="nett" class="num" readonly tabindex="-1" size="8"></td><td><input name="gst" class="num" readonly size="7"></td>
+    <td><input name="amount" class="num" readonly size="8"></td><td><input name="detail" size="26" maxlength="40"></td></tr>`);
 }
 
-function loadSaved() { try { return JSON.parse(localStorage.getItem("po-standin") || "[]"); } catch { return []; } }
-function storeSaved(list) { try { localStorage.setItem("po-standin", JSON.stringify(list)); } catch {} }
-function money(n) { return n.toFixed(2); }
-function status(msg, isError) { $("status").textContent = msg; $("status").className = isError ? "error" : ""; }
+function loadBatch() { try { return JSON.parse(localStorage.getItem("cr31031-standin") || "[]"); } catch { return []; } }
+function storeBatch(list) { try { localStorage.setItem("cr31031-standin", JSON.stringify(list)); } catch {} }
+function lineRows() { return [...tbody.rows].map(r => Object.fromEntries([...r.querySelectorAll("input")].map(i => [i.name, i]))); }
+function usedLines() { return lineRows().filter(l => l.table.value || l.code.value || l.qty.value || l.detail.value); }
 
-function lineRows() {
-  return [...tbody.rows].map(r => Object.fromEntries([...r.querySelectorAll("input")].map(i => [i.name, i])));
+let returnFocus = null;
+function showDialog(msg, field) {
+  $("dialogMsg").textContent = msg; $("dialog").style.display = "flex"; returnFocus = field; $("dialogOk").focus();
 }
+$("dialogOk").onclick = () => { $("dialog").style.display = "none"; if (returnFocus) { returnFocus.focus(); returnFocus.select(); } };
 
 function recalc() {
-  let sub = 0, gst = 0;
+  let total = 0;
   for (const l of lineRows()) {
-    const qty = parseFloat(l.qty.value), price = parseFloat(l.price.value);
-    if (isNaN(qty) || isNaN(price)) { l.total.value = ""; continue; }
-    const ex = qty * price;
-    l.total.value = money(ex);
-    sub += ex;
-    gst += ex * (GST_RATES[l.tax.value.toUpperCase()] ?? 0);
+    const qty = parseFloat(l.qty.value), cost = parseFloat(l.cost.value);
+    if (isNaN(qty) || isNaN(cost)) { l.nett.value = l.gst.value = l.amount.value = ""; continue; }
+    const nett = qty * cost, gst = nett * (TAX_RATES[l.tax.value.toUpperCase()] ?? 0);
+    l.nett.value = nett.toFixed(2); l.gst.value = gst.toFixed(2); l.amount.value = (nett + gst).toFixed(2);
+    total += nett + gst;
   }
-  $("subtotal").value = money(sub); $("gst").value = money(gst); $("total").value = money(sub + gst);
+  $("total").value = total.toFixed(2);
 }
 
-function fail(msg, el) { status(msg, true); el.focus(); el.select(); return false; }
-
-function validate() {
-  const code = $("creditor").value.toUpperCase();
-  if (!CREDITORS[code]) return fail(`Creditor code "${code}" not found`, $("creditor"));
-  if (!/^\d{2}\/\d{2}\/\d{4}$/.test($("date").value)) return fail("Order date must be dd/mm/yyyy", $("date"));
-  if (!$("ref").value.trim()) return fail("Reference is required", $("ref"));
-  let used = 0;
-  for (const [n, l] of lineRows().entries()) {
-    if (!l.gl.value && !l.desc.value && !l.qty.value) continue;
-    used++;
-    if (!GL_CODES.includes(l.gl.value)) return fail(`Line ${n + 1}: GL code "${l.gl.value}" not found`, l.gl);
-    if (!/^\d{4}$/.test(l.sub.value)) return fail(`Line ${n + 1}: subprogram must be 4 digits`, l.sub);
-    if (!/^\d{3}$/.test(l.init.value)) return fail(`Line ${n + 1}: initiative must be 3 digits`, l.init);
-    if (!(parseFloat(l.qty.value) > 0)) return fail(`Line ${n + 1}: quantity must be more than 0`, l.qty);
-    if (!(parseFloat(l.price.value) >= 0)) return fail(`Line ${n + 1}: unit price is invalid`, l.price);
-    if (!(l.tax.value.toUpperCase() in GST_RATES)) return fail(`Line ${n + 1}: GST code must be GST or FRE`, l.tax);
+function firstError() {
+  if (!CREDITORS[$("crkey").value.toUpperCase()]) return [`Creditor key "${$("crkey").value}" not found`, $("crkey")];
+  if (!$("orderNo").value.trim()) return ["Order number is required", $("orderNo")];
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test($("orderDate").value)) return ["Order date must be dd/mm/yyyy", $("orderDate")];
+  const lines = usedLines();
+  if (!lines.length) return ["Enter at least one line", lineRows()[0].table];
+  for (const l of lines) {
+    const n = lineRows().indexOf(l) + 1, table = l.table.value.toUpperCase();
+    if (table !== "GL" && table !== "AR") return [`Line ${n}: Table must be GL or AR`, l.table];
+    if (!SUBPROGRAMS.includes(l.sub.value)) return [`Line ${n}: subprogram "${l.sub.value}" not found`, l.sub];
+    if (!/^\d{3}$/.test(l.init.value)) return [`Line ${n}: initiative must be 3 digits`, l.init];
+    if (table === "GL" && !GL_CODES.includes(l.code.value)) return [`Line ${n}: GL code "${l.code.value}" not found`, l.code];
+    if (table === "AR" && !l.code.value.trim()) return [`Line ${n}: asset code is required`, l.code];
+    if (!(l.tax.value.toUpperCase() in TAX_RATES)) return [`Line ${n}: tax code "${l.tax.value}" not found`, l.tax];
+    if (!(parseFloat(l.qty.value) > 0)) return [`Line ${n}: quantity must be more than 0`, l.qty];
+    if (!(parseFloat(l.cost.value) >= 0)) return [`Line ${n}: unit cost is invalid`, l.cost];
   }
-  if (!used) return fail("Enter at least one order line", lineRows()[0].gl);
-  return true;
+  return null;
 }
 
-function renderSaved() {
-  $("saved").innerHTML = loadSaved().map(p =>
-    `<tr><td>${p.po}</td><td>${p.date}</td><td>${p.creditor}</td><td>${p.ref.replace(/</g, "&lt;")}</td><td class="num">${p.total}</td></tr>`).join("");
+function renderBatch() {
+  $("batch").innerHTML = loadBatch().map(o =>
+    `<tr><td>${o.orderNo.replace(/</g, "&lt;")}</td><td>${o.crkey}</td><td>${o.orderDate}</td><td>${o.lines}</td><td class="num">${o.total}</td><td>${o.status}</td></tr>`).join("");
+}
+
+function clearForm() {
+  document.querySelectorAll("main input").forEach(i => i.value = "");
+  recalc(); $("crkey").focus();
 }
 
 function newOrder() {
-  document.querySelectorAll("main input:not([readonly])").forEach(i => i.value = "");
-  $("creditorName").value = "";
-  const d = new Date();
-  $("date").value = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
-  $("po").value = String(loadSaved().length + 1).padStart(6, "0");
-  recalc(); status("Ready"); $("creditor").focus();
-}
-
-function save() {
+  if (!$("crkey").value && !usedLines().length) return $("crkey").focus();
   recalc();
-  if (!validate()) return;
-  const list = loadSaved();
-  list.push({ po: $("po").value, date: $("date").value, creditor: $("creditor").value.toUpperCase(), ref: $("ref").value, total: $("total").value });
-  storeSaved(list); renderSaved();
-  const po = $("po").value;
-  newOrder();
-  status(`Purchase order ${po} saved`);
+  const err = firstError();
+  if (err) return showDialog(...err);
+  const list = loadBatch();
+  list.push({ orderNo: $("orderNo").value, crkey: $("crkey").value.toUpperCase(), orderDate: $("orderDate").value,
+              lines: usedLines().length, total: $("total").value, status: "Pending" });
+  storeBatch(list); renderBatch();
+  const orderNo = $("orderNo").value;
+  clearForm();
+  $("status").textContent = `Order ${orderNo} added to batch - enter next creditor key`;
 }
 
-$("creditor").addEventListener("change", e => { $("creditorName").value = CREDITORS[e.target.value.toUpperCase()] || "** not found **"; });
-tbody.addEventListener("input", recalc);
-$("save").onclick = save;
-$("new").onclick = newOrder;
-document.addEventListener("keydown", e => {
-  if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); save(); }
+function updateBatch() {
+  if ($("crkey").value || usedLines().length) newOrder();
+  if ($("dialog").style.display === "flex") return;
+  const list = loadBatch().map(o => ({ ...o, status: "Updated" }));
+  storeBatch(list); renderBatch();
+  $("status").textContent = "Batch updated";
+}
+
+$("crkey").addEventListener("change", e => {
+  const name = CREDITORS[e.target.value.toUpperCase()];
+  $("crname").value = name || "";
+  if (!name) showDialog(`Creditor key "${e.target.value}" not found`, e.target);
 });
-renderSaved(); newOrder();
+tbody.addEventListener("input", recalc);
+$("newOrder").onclick = newOrder;
+$("update").onclick = updateBatch;
+document.addEventListener("keydown", e => {
+  if ($("dialog").style.display === "flex" && e.key === "Enter") { e.preventDefault(); $("dialogOk").click(); }
+  else if (e.altKey && e.key.toLowerCase() === "n") { e.preventDefault(); newOrder(); }
+});
+renderBatch(); clearForm();
 </script>
 </body>
 </html>

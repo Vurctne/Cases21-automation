@@ -38,7 +38,8 @@ Step types: `{"type": "keys", "value": "ACME01{Tab}"}`, `{"type": "click", "x": 
 
 ## Layout
 
-- `standin/po-entry.html` – fake CASES21 purchase order entry screen (draft field list; correct it to match the real one)
+- `standin/po-entry.html` – fake CR31031 Creditor Order screen (ADD mode). Field and Tab order copy the community
+  "CASES21 Purchase Order Import Builder" PAD flow; Alt+N stands in for CASES21's Ctrl+Shift+N (new order)
 - `bridge/pa.py` – agent-side client; `bridge/test_pa.py` – its tests (`cd bridge && python3 -m unittest`)
 - `docs/SETUP.md` – click-by-click setup for the flows, app registration and secrets
 
@@ -48,6 +49,8 @@ Step types: `{"type": "keys", "value": "ACME01{Tab}"}`, `{"type": "click", "x": 
   Power Automate use, software on the CASES21 PC.
 - CASES21 runs in Citrix, so the desktop flow can only use keys, clicks and screenshots unless DE installs
   the Power Automate agent for virtual desktops on its Citrix hosts.
-- Screenshots of real CASES21 would send school data to the agent. Lock the desktop flow to fixed
-  operations, keep payments and approvals out of scope, and keep a human confirm before any save.
+- Screenshots of real CASES21 would send school data to the agent. Replace the free-form keys/clicks flow with a
+  fixed "enter these PO lines" flow modelled on the community importer (start in CR31031 ADD mode, cursor in
+  Creditor key), and stop before "update the batch" so a person reviews and commits. Keep payments out of scope.
+- The CASES21 Citrix window title is not known yet; the desktop flow needs it for the focus guard.
 - The trial ends after 90 days; ongoing use needs a Power Automate Premium licence.

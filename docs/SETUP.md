@@ -8,7 +8,7 @@ Do the steps in order. Each ends with what to send back.
 1. On github.com, open this repo, go to `standin/po-entry.html`, click **Download raw file** (the download icon).
 2. Save it to **Documents**.
 3. Open a new Edge window (**Ctrl+N**), drag the file into it. Keep this window open, with this tab active.
-   The window title must start with `CASES21 stand-in`.
+   The tab should read `CASES21 stand-in - CR31031 Creditor Order`; the window title must start with `CASES21 stand-in`.
 
 ## 2. Desktop flow `cases21-hands`
 
